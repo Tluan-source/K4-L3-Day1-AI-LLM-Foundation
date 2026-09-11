@@ -31,7 +31,7 @@ PRICING_PER_1K_TOKENS = {
 
 # Tên model có thể đổi qua .env — ví dụ khi dùng NVIDIA NIM miễn phí
 # (xem LAB_GUIDE.md, Phụ lục B). Không đặt gì trong .env thì mặc định OpenAI.
-OPENAI_MODEL = os.getenv("LAB_MODEL", "gpt-4o")
+OPENAI_MODEL = os.getenv("LAB_MODEL", "moonshotai/kimi-k3")
 OPENAI_MINI_MODEL = os.getenv("LAB_MINI_MODEL", "gpt-4o-mini")
 
 
@@ -45,10 +45,27 @@ OPENAI_MINI_MODEL = os.getenv("LAB_MINI_MODEL", "gpt-4o-mini")
 def call_openai(
     prompt: str,
     model: str = OPENAI_MODEL,
-    temperature: float = 0.7,
+    temperature: float = 1,
     top_p: float = 0.9,
     max_tokens: int = 256,
 ) -> tuple[str, float]:
+    
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+    timebefore = time.perf_counter()  # before
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+    time_after = time.perf_counter()  # after
+    response.choices[0].message.content
+    latency =  time_after - timebefore
+    return response.choices[0].message.content, latency
     """
     Gọi OpenAI Chat Completions API, trả về nội dung phản hồi + độ trễ.
 
@@ -71,7 +88,7 @@ def call_openai(
     """
     # TODO: import OpenAI, tạo client, gọi chat.completions.create,
     #       đo start/end time, trả về (response_text, latency)
-    raise NotImplementedError("Implement call_openai")
+
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +100,14 @@ def call_openai_mini(
     top_p: float = 0.9,
     max_tokens: int = 256,
 ) -> tuple[str, float]:
+
+    return call_openai(
+        prompt=prompt,
+        model=OPENAI_MINI_MODEL,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
     """
     Gọi API với model gpt-4o-mini — nhanh hơn và rẻ hơn.
 
@@ -100,6 +125,16 @@ def call_openai_mini(
 # Task 1.3 — So sánh GPT-4o vs GPT-4o-mini
 # ---------------------------------------------------------------------------
 def compare_models(prompt: str) -> dict:
+    gpt4o_response, gpt4o_latency = call_openai(prompt)
+    mini_response, mini_latency = call_openai_mini(prompt)
+    cost = (len(gpt4o_response.split()) / 0.75) / 1000 * PRICING_PER_1K_TOKENS["gpt-4o"]["output"]
+    return {
+        "gpt4o_response": gpt4o_response,
+        "mini_response": mini_response,
+        "gpt4o_latency": gpt4o_latency,
+        "mini_latency": mini_latency,
+        "gpt4o_cost_estimate": cost
+    }
     """
     Gọi cả hai model với cùng một prompt và trả về dict so sánh.
 
@@ -350,6 +385,21 @@ def format_comparison_table(results: list[dict]) -> str:
     # TODO (bonus): dựng chuỗi bảng và trả về
     raise NotImplementedError("Implement format_comparison_table")
 
+def main():
+    prompt = "Hãy kể cho tôi một sự thật thú vị về Việt Nam."
+    temperatures = [0.0, 0.5, 1.0, 1.5]
+
+    for temp in temperatures:
+        print(f"\n=== Temperature = {temp} ===")
+        response_text, latency = call_openai(
+            prompt=prompt,
+            temperature=temp
+        )
+
+        print("Response:")
+        print(response_text)
+
+        print(f"Latency: {latency:.4f} seconds")
 
 # ---------------------------------------------------------------------------
 # Entry point — demo chạy thật (cần OPENAI_API_KEY)
@@ -371,3 +421,4 @@ if __name__ == "__main__":
     for key, value in stats.items():
         if key != "history":
             print(f"{key}: {value}")
+    main()
